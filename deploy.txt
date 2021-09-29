@@ -1,0 +1,2 @@
+docker build -f OpenGraphParser/Dockerfile -t yanotek/open-graph-parser:latest .
+docker push yanotek/open-graph-parser:latest
