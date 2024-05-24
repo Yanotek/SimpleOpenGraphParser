@@ -30,11 +30,12 @@ namespace OpenGraphParser.Controllers
 
         [HttpGet]
         [EnableCors("MyPolicy")]
-        public async Task<IActionResult> Parse(string url, string? userAgent = "", bool validate = true, int timeoutInMilliseconds = 10000)
+        public async Task<IActionResult> Parse(string url, string? userAgent = "", bool validate = true, int timeoutInMilliseconds = 10000, bool bitchute = false)
         {
             try
             {
-                if (_memoryCache.TryGetValue(url, out var cacheResult))
+                var memoryKey = url + (bitchute ? "bitchute" : "");
+                if (_memoryCache.TryGetValue(memoryKey, out var cacheResult))
                 {
                     return new JsonResult(cacheResult);
                 }
@@ -51,8 +52,19 @@ namespace OpenGraphParser.Controllers
                 {
                     result = await ParseMetaTags(url);
                 }
+                
+                if (bitchute)
+                {
+                    var additionalData = await GetBitchuteAdditionalData(url, result);
+                    _memoryCache.Set(memoryKey, additionalData, new MemoryCacheEntryOptions()
+                    {
+                        Size = 1,
+                        SlidingExpiration = TimeSpan.FromHours(1)
+                    });
+                    return new JsonResult(additionalData);
+                }
 
-                _memoryCache.Set(url, result, new MemoryCacheEntryOptions()
+                _memoryCache.Set(memoryKey, result, new MemoryCacheEntryOptions()
                 {
                     Size = 1,
                     SlidingExpiration = TimeSpan.FromHours(1)
@@ -97,6 +109,65 @@ namespace OpenGraphParser.Controllers
             }
 
             return result;
+        }
+        
+        private async Task<Dictionary<string, object>> GetBitchuteAdditionalData(string url, Dictionary<string, string> ogData)
+        {
+            var result = new Dictionary<string, object>();
+            result["og"] = ogData;
+
+            var web = new HtmlWeb();
+            var doc = await web.LoadFromWebAsync(url);
+
+            var magnetNode = doc.DocumentNode.SelectSingleNode("//a[@title='Magnet Link']");
+            string magnetLink = magnetNode?.Attributes["href"]?.Value;
+
+            if (magnetLink != null && magnetLink.StartsWith("magnet"))
+            {
+                var videoData = new Dictionary<string, string>
+                {
+                    ["xt"] = ExtractMagnetParameter(magnetLink, "xt"),
+                    ["dn"] = ExtractMagnetParameter(magnetLink, "dn"),
+                    ["tr"] = ExtractMagnetParameter(magnetLink, "tr"),
+                    ["as"] = ExtractMagnetParameter(magnetLink, "as"),
+                    ["xs"] = ExtractMagnetParameter(magnetLink, "xs"),
+                    ["title"] = ogData.ContainsKey("og:title") ? ogData["og:title"] : string.Empty,
+                    ["preview"] = ogData.ContainsKey("og:image") ? ogData["og:image"] : string.Empty
+                };
+                result["video"] = videoData;
+                result["magnet"] = magnetLink;
+            }
+            else
+            {
+                var sourceNode = doc.DocumentNode.SelectSingleNode("//video/source");
+                var src = sourceNode?.Attributes["src"]?.Value;
+
+                if (src != null)
+                {
+                    var videoData = new Dictionary<string, string>
+                    {
+                        ["as"] = src,
+                        ["title"] = ogData.ContainsKey("og:title") ? ogData["og:title"] : string.Empty,
+                        ["preview"] = ogData.ContainsKey("og:image") ? ogData["og:image"] : string.Empty
+                    };
+                    result["video"] = videoData;
+                }
+            }
+
+            return result;
+        }
+
+        private string ExtractMagnetParameter(string magnetLink, string parameter)
+        {
+            var parameters = magnetLink
+                .Substring(magnetLink.IndexOf('?') + 1)
+                .Split('&')
+                .Select(param => param.Split('='))
+                .GroupBy(x => x[0])
+                .Select(x => x.Last())
+                .ToDictionary(parts => parts[0], parts => parts[1]);
+
+            return parameters.TryGetValue(parameter, out var value) ? value : string.Empty;
         }
     }
 }
