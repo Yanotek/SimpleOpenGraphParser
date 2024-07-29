@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Cors;
@@ -151,6 +153,56 @@ namespace OpenGraphParser.Controllers
                         ["preview"] = ogData.ContainsKey("og:image") ? ogData["og:image"] : string.Empty
                     };
                     result["video"] = videoData;
+                }
+            }
+
+            if (!result.ContainsKey("video"))
+            {
+                string videoId = null;
+                var uri = new Uri(url);
+                var pathSegments = uri.AbsolutePath.Split('/');
+                if (pathSegments.Length > 2 && pathSegments[1] == "video")
+                {
+                    videoId = pathSegments[2];
+                }
+                else
+                {
+                    var canonicalNode = doc.DocumentNode.SelectSingleNode("//link[@rel='canonical']");
+                    var canonicalHref = canonicalNode?.Attributes["href"]?.Value;
+                    if (canonicalHref != null)
+                    {
+                        var canonicalUri = new Uri(canonicalHref);
+                        var canonicalPathSegments = canonicalUri.AbsolutePath.Split('/');
+                        if (canonicalPathSegments.Length > 2 && canonicalPathSegments[1] == "video")
+                        {
+                            videoId = canonicalPathSegments[2];
+                        }
+                    }
+                }
+
+                if (videoId != null)
+                {
+                    using var httpClient = new HttpClient();
+                    var requestContent = new StringContent($"{{\"video_id\":\"{videoId}\"}}", Encoding.UTF8, "application/json");
+                    var response = await httpClient.PostAsync("https://api.bitchute.com/api/beta/video/media", requestContent);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return result;
+                    }
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var videoInfo = JsonSerializer.Deserialize<Dictionary<string, object>>(responseContent);
+
+                    if (videoInfo.TryGetValue("media_url", out var mediaUrl))
+                    {
+                        var videoData = new Dictionary<string, string>
+                        {
+                            ["as"] = mediaUrl.ToString(),
+                            ["title"] = ogData.ContainsKey("og:title") ? ogData["og:title"] : string.Empty,
+                            ["preview"] = ogData.ContainsKey("og:image") ? ogData["og:image"] : string.Empty
+                        };
+                        result["video"] = videoData;
+                    }
                 }
             }
 
