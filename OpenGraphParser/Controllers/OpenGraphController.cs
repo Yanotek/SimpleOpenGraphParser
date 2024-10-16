@@ -32,7 +32,7 @@ namespace OpenGraphParser.Controllers
 
         [HttpGet]
         [EnableCors("MyPolicy")]
-        public async Task<IActionResult> Parse(string url, string? userAgent = "", bool validate = true, int timeoutInMilliseconds = 10000, bool bitchute = false)
+        public async Task<IActionResult> Parse(string url, string? userAgent = "bastyon", bool validate = true, int timeoutInMilliseconds = 10000, bool bitchute = false)
         {
             try
             {
