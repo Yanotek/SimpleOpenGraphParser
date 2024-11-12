@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -41,13 +42,21 @@ namespace OpenGraphParser.Controllers
                 {
                     return new JsonResult(cacheResult);
                 }
+                
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromMilliseconds(timeoutInMilliseconds);
+                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
 
-                var graph = await OpenGraph.ParseUrlAsync(url, userAgent, validate, timeoutInMilliseconds);
+                var response = await httpClient.GetAsync(url);
+                var content = await response.Content.ReadAsStringAsync();
+
+                var graph = OpenGraph.ParseHtml(content);
 
                 var result = new Dictionary<string, string>();
                 foreach (var metadata in graph.Metadata)
                 {
-                    result.Add(metadata.Key, metadata.Value.FirstOrDefault()?.Value ?? "");
+                    var decodedValue = metadata.Value.FirstOrDefault()?.Value ?? "";
+                    result.Add(metadata.Key, decodedValue);
                 }
 
                 if (!result.Any())
