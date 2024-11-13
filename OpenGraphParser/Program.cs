@@ -36,4 +36,4 @@ app.UseCors();
 
 app.MapControllers();
 
-app.Run("http://localhost:5252");
+app.Run("http://*.*.*.*:5252");
